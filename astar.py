@@ -1,9 +1,10 @@
-from math import sqrt
-from copy import deepcopy
 import sys
 import heapq
+import copy
+import gui 
+import threading
+from math import sqrt
 from timeit import timeit
-
 
 class Position:
     def __init__(self, x=0, y=0):
@@ -45,8 +46,23 @@ class Map:
                         if block < 0 or block > 1:
                             raise Exception("Value in map must be either 0 or 1")
                         self.map[x].append(block)
-            except Exception:
-                print("Something went wrong while reading from file")
+            except IOError:
+                print("Something went wrong while reading from {}".format(file_name))
+            finally:
+                file.close()
+    
+    def save_to_file(self, file_name):
+        with open(file_name, "w") as file:
+            try:
+                data = "{}\n".format(self.size)
+                data += "{} {}\n{} {}\n".format(self.start.x, self.start.y, self.end.x, self.end.y)
+                for row in range(self.size):
+                    for col in range(self.size):
+                        data += "{} ".format(self.map[row][col])
+                    data += "\n"
+                file.write(data)
+            except IOError:
+                print("Something went wrong while writing to {}".format(file_name))
             finally:
                 file.close()
 
@@ -70,12 +86,10 @@ class Map:
     def is_wall(self, x, y):
         return self.map[x][y] == 1
 
-
 class SearchNode:
     def __init__(self, position=Position(), parent=None):
         self.position = position
         self.parent = parent
-
 
 class PriorityEntry:
     def __init__(self, priority, data):
@@ -84,7 +98,6 @@ class PriorityEntry:
 
     def __lt__(self, other):
         return self.priority < other.priority
-
 
 class PriorityQueue:
     def __init__(self):
@@ -99,12 +112,10 @@ class PriorityQueue:
     def empty(self):
         return len(self.queue) == 0
 
-
 class Heuristic:
     @staticmethod
     def euclidian_distance(p1, p2):
         return sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
-
 
 class PathFinding:
     @staticmethod
@@ -123,7 +134,7 @@ class PathFinding:
         result = -1
         correct_path = []
         if path_found:
-            result = deepcopy(map.map)
+            result = copy.deepcopy(map.map)
             result[map.start.x][map.start.y] = "S"
             result[map.end.x][map.end.y] = "G"
 
@@ -150,7 +161,7 @@ class PathFinding:
 
     @staticmethod
     @timeit
-    def search_map(map, heuristic, epsilon=1):
+    def search_map(map, heuristic, epsilon=1, message_queue=None):
         # Create a map for checking if a block is in queue
         check_map = PathFinding.create_map(map.size, -1)
         check_map[map.start.x][map.start.y] = 0
@@ -159,10 +170,22 @@ class PathFinding:
         path_found = False
         open_list = []
         queue = PriorityQueue()
+        # Lock user input
+        if message_queue != None:
+            message_queue.put_nowait(gui.Message(action="LOCK"))
         node = SearchNode(map.start, None)
         queue.push(node, heuristic(map.start, map.end))
         while not queue.empty():
             node = queue.pop()
+
+            # Request drawing
+            if message_queue != None:
+                print(message_queue.qsize())
+                pop_message = gui.Message(action="PUSH", param=gui.Grid.POP_ID)
+                pop_message.x = node.data.position.x
+                pop_message.y = node.data.position.y
+                message_queue.put_nowait(pop_message)
+
             node = node.data
             x = node.position.x
             y = node.position.y
@@ -201,9 +224,18 @@ class PathFinding:
                 child_pos = Position(tempx, tempy)
                 f_value = g_value + heuristic(child_pos, map.end) * epsilon
                 queue.push(SearchNode(child_pos, node), f_value)
+                
+                # Request drawing
+                if message_queue != None:
+                    in_queue_message = gui.Message(action="PUSH", param=gui.Grid.IN_QUEUE_ID)
+                    in_queue_message.x = tempx
+                    in_queue_message.y = tempy
+                    message_queue.put_nowait(in_queue_message)
 
+        # Unlock user input
+        if message_queue != None:
+            message_queue.put_nowait(gui.Message(action="UNLOCK"))
         return map, open_list, path_found
-
 
 class TestPathFinding:
     def __init__(self, inp="", out="", time_input="", time_output=""):
@@ -284,6 +316,20 @@ class TestPathFinding:
             print("Something went wrong while writing to {}".format(self.time_output))
         finally:
             out.close()
+
+class SearchThread(threading.Thread):
+    def __init__(self, map=None, heuristic=Heuristic.euclidian_distance, epsilon=1.0, message_queue=None):
+        threading.Thread.__init__(self)
+        self.map = map
+        self.heuristic = heuristic
+        self.epsilon = epsilon
+        self.message_queue = message_queue
+    
+    def run(self):
+        if self.map == None:
+            return -1
+        PathFinding.search_map(self.map, self.heuristic, self.epsilon, self.message_queue)
+        return PathFinding.search_map.time_elapsed
 
 if __name__ == "__main__":
     if len(sys.argv) != 3 and len(sys.argv) != 5:
