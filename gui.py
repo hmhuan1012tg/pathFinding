@@ -5,6 +5,7 @@ import queue
 import tkinter
 import astar
 from tkinter import messagebox
+from tkinter import simpledialog 
 from math import sqrt
 from timeit import timeit
 
@@ -304,6 +305,12 @@ class Application:
                 self.prompt_message("Map saved successfully")
             else:
                 self.prompt_message("Error saving map", "ERROR")
+        if keys[pygame.K_LCTRL] and keys[pygame.K_o]:
+            tkinter.Tk().wm_withdraw()
+            filename = simpledialog.askstring("Enter file name", "Open map from: ")
+            map = astar.Map()
+            map.read_from_file(filename)
+            self.load_map(map)
 
         mouse_buttons = pygame.mouse.get_pressed()
         if mouse_buttons[0]:
@@ -322,6 +329,9 @@ class Application:
                 self.input_lock = True
             elif action == "UNLOCK":
                 self.input_lock = False
+                msg = "Searching finished in {} ms\n".format(astar.PathFinding.search_map.time_elapsed)
+                msg += "Path length is {}".format(len(self.search_thread.result[1]))
+                self.prompt_message(msg, "INFO")
             elif action == "POP":
                 self.grid.pop_grid_value(message.x, message.y, message.param)
             elif action == "PUSH":

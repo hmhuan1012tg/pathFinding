@@ -321,6 +321,7 @@ class SearchThread(threading.Thread):
         threading.Thread.__init__(self)
         self.started = False
         self.finished = False
+        self.result = None
         self.map = map
         self.heuristic = heuristic
         self.epsilon = epsilon
@@ -331,9 +332,9 @@ class SearchThread(threading.Thread):
         if self.map == None:
             self.finished = True
             return -1
-        PathFinding.search_map(self.map, self.heuristic, self.epsilon, self.message_queue)
+        raw_res = PathFinding.search_map(self.map, self.heuristic, self.epsilon, self.message_queue)
         self.finished = True
-        return PathFinding.search_map.time_elapsed
+        self.result = PathFinding.parse_result(*raw_res)
     
     def runnable(self):
         return self.map != None
