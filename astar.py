@@ -180,7 +180,6 @@ class PathFinding:
 
             # Request drawing
             if message_queue != None:
-                print(message_queue.qsize())
                 pop_message = gui.Message(action="PUSH", param=gui.Grid.POP_ID)
                 pop_message.x = node.data.position.x
                 pop_message.y = node.data.position.y
@@ -320,16 +319,24 @@ class TestPathFinding:
 class SearchThread(threading.Thread):
     def __init__(self, map=None, heuristic=Heuristic.euclidian_distance, epsilon=1.0, message_queue=None):
         threading.Thread.__init__(self)
+        self.started = False
+        self.finished = False
         self.map = map
         self.heuristic = heuristic
         self.epsilon = epsilon
         self.message_queue = message_queue
     
     def run(self):
+        self.started = True
         if self.map == None:
+            self.finished = True
             return -1
         PathFinding.search_map(self.map, self.heuristic, self.epsilon, self.message_queue)
+        self.finished = True
         return PathFinding.search_map.time_elapsed
+    
+    def runnable(self):
+        return self.map != None
 
 if __name__ == "__main__":
     if len(sys.argv) != 3 and len(sys.argv) != 5:

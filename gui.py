@@ -27,6 +27,19 @@ class Ultilities:
                 a_row.append(item)
             grid.append(a_row)
         return grid
+    
+    @staticmethod
+    def create_map(size, default_value):
+        matrix = []
+        for row in range(size):
+            a_row = []
+            for col in range(size):
+                a_row.append(default_value)
+            matrix.append(a_row)
+        map = astar.Map()
+        map.map = matrix
+        map.size = size
+        return map
 
 class Message:
     def __init__(self, x=0, y=0, action=None, param=None):
@@ -45,8 +58,8 @@ class GridItem:
     def top(self):
         return self.stack[-1]
 
-    def pop(self):
-        self.stack.pop()
+    def pop(self, value):
+        self.stack = list(filter(lambda a: a != value, self.stack))
     
     def empty(self):
         return len(self.stack) == 0
@@ -58,13 +71,13 @@ class Grid:
     IN_QUEUE_ID = 3
     POP_ID = 4
 
-    def __init__(self, row_num=10, col_num=10):
-        self.grid = Ultilities.create_grid(row_num, col_num, Grid.NO_WALL_ID) 
-        self.row_num = row_num 
-        self.col_num = col_num
+    def __init__(self, size):
+        self.grid = Ultilities.create_grid(size, size, Grid.NO_WALL_ID) 
+        self.row_num = size 
+        self.col_num = size 
         self.rect_size = [20, 20]
         self.margin = 5
-        self.map = None
+        self.map = Ultilities.create_map(size, 0)
 
     def load_map(self, map):
         self.map = map
@@ -84,8 +97,10 @@ class Grid:
         return map.start.x, map.start.y, map.end.x, map.end.y
     
     def save_map(self):
-        if self.map == None:
-            return False
+        # Map size and grid size not matched
+        # Create new map
+        if self.map.size != self.row_num:
+            self.map = Ultilities.create_map(self.row_num, 0)
         for row in range(self.row_num):
             for col in range(self.col_num):
                 value = self.get_grid_value(row, col)
@@ -102,8 +117,7 @@ class Grid:
         self.grid[x][y].push(value)
     
     def pop_grid_value(self, x, y, value):
-        while self.grid[x][y].top() == value:
-            self.grid[x][y].pop()
+        self.grid[x][y].pop(value)
     
     def get_grid_value(self, x, y):
         return self.grid[x][y].top()
@@ -120,10 +134,10 @@ class Color:
     COLOR_DICT = dict(
         BLACK = (0, 0, 0),
         WHITE = (255, 255, 255),
-        GREEN = (42, 54, 59),
-        LIGHT_GREEN = (153, 184, 152),
-        RED = (246, 114, 128),
-        BLUE = (53, 92, 125)
+        GREEN = (77, 175, 124),
+        LIGHT_GREEN = (200, 247, 197),
+        RED = (244, 101, 40),
+        BLUE = (64, 150, 211)
     )
 
 class Window:
@@ -152,7 +166,7 @@ class Application:
         self.start = dict( position = astar.Position(-1, -1), added = False )
         self.end = dict( position = astar.Position(-1, -1), added = False )
 
-        self.grid = Grid(20, 20)
+        self.grid = Grid(30)
         self.grid.calculate_rect_size(self.window.size[0], self.window.size[1])
 
         self.prompt_instruction()
@@ -173,7 +187,11 @@ class Application:
         end = self.end["position"]
         self.grid.map.set_start_position(start.x, start.y)
         self.grid.map.set_end_position(end.x, end.y)
+        self.search_thread.map = self.grid.map
         return True
+    
+    def prepare_thread(self):
+        self.search_thread = astar.SearchThread(message_queue=self.message_queue)
     
     def prompt_exit(self):
         tkinter.Tk().wm_withdraw()
@@ -208,6 +226,10 @@ class Application:
                     self.prompt_exit()
                 if not self.input_lock:
                     if event.key == pygame.K_RETURN:
+                        if self.search_thread.finished:
+                            self.prepare_thread()
+                            self.clear_path()
+                        self.save_map()
                         self.search_thread.start()
             elif event.type == pygame.MOUSEBUTTONDOWN and not self.input_lock:
                 row, column = self.get_item_at_mouse_position()
@@ -275,7 +297,7 @@ class Application:
             return
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LCTRL] and keys[pygame.K_l]:
-            self.clear()
+            self.clear_path()
         if keys[pygame.K_LCTRL] and keys[pygame.K_s]:
             result = self.save_map()
             if result:
@@ -305,7 +327,7 @@ class Application:
             elif action == "PUSH":
                 self.grid.push_grid_value(message.x, message.y, message.param)
     
-    def clear(self):
+    def clear_start_end(self):
         if self.start["added"]:
             self.grid.push_grid_value(self.start["position"].x, self.start["position"].y, Grid.NO_WALL_ID)
             self.start["position"] = astar.Position(-1, -1)
@@ -314,6 +336,12 @@ class Application:
             self.grid.push_grid_value(self.end["position"].x, self.end["position"].y, Grid.NO_WALL_ID)
             self.end["position"] = astar.Position(-1, -1)
             self.end["added"] = False
+
+    def clear_path(self):
+        for row in range(self.grid.row_num):
+            for col in range(self.grid.col_num):
+                self.grid.pop_grid_value(row, col, Grid.POP_ID)
+                self.grid.pop_grid_value(row, col, Grid.IN_QUEUE_ID)
 
     def render(self):
         self.window.screen.fill(Color.COLOR_DICT["BLACK"])
@@ -346,6 +374,8 @@ class Application:
             self.render()
             self.clock.tick(60)
         pygame.quit()
+        if self.search_thread.started:
+            self.search_thread.join()
 
 if __name__ == "__main__":
     Ultilities.init_pygame()
@@ -353,8 +383,4 @@ if __name__ == "__main__":
     map = astar.Map()
     map.read_from_file("input.txt")
 
-    app.load_map(map)
     app.run()
-    app.search_thread.join()
-
-    map.save_to_file("generated_map.txt")
