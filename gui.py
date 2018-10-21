@@ -71,6 +71,7 @@ class Grid:
     START_END_ID = 2
     IN_QUEUE_ID = 3
     POP_ID = 4
+    CORRECT_PATH_ID = 5
 
     def __init__(self, size):
         self.grid = Ultilities.create_grid(size, size, Grid.NO_WALL_ID) 
@@ -179,6 +180,16 @@ class Application:
 
         self.start = dict( position = astar.Position(startx, starty), added = True )
         self.end = dict( position = astar.Position(endx, endy), added = True )
+
+    def load_map_from_file(self):
+        tkinter.Tk().wm_withdraw()
+        filename = simpledialog.askstring("Enter file name", "Open map from: ")
+        map = astar.Map()
+        if map.read_from_file(filename):
+            self.prompt_message("Map loaded successfully", "INFO")
+            self.load_map(map)
+        else:
+            self.prompt_message("Error loading map\nMake sure the file exists", "ERROR")
     
     def save_map(self):
         if not self.start["added"] or not self.end["added"]:
@@ -190,6 +201,22 @@ class Application:
         self.grid.map.set_end_position(end.x, end.y)
         self.search_thread.map = self.grid.map
         return True
+    
+    def save_map_to_file(self):
+        result = self.save_map()
+        if result:
+            self.prompt_message("Map saved successfully")
+            tkinter.Tk().wm_withdraw()
+            ok = messagebox.askyesno("Save to File", "Do you want to save to file ?")
+            if ok:
+                tkinter.Tk().wm_withdraw()
+                filename = simpledialog.askstring("Enter file name", "Save map to:")
+                if self.grid.map.save_to_file(filename):
+                    self.prompt_message("Successfully saved to file", "INFO")
+                else:
+                    self.prompt_message("Error saving to file\nSomething went wrong", "ERROR")
+        else:
+            self.prompt_message("Error saving map", "ERROR")
     
     def prepare_thread(self):
         self.search_thread = astar.SearchThread(message_queue=self.message_queue)
@@ -299,18 +326,12 @@ class Application:
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LCTRL] and keys[pygame.K_l]:
             self.clear_path()
+        if keys[pygame.K_LCTRL] and keys[pygame.K_r]:
+            self.clear_all()
         if keys[pygame.K_LCTRL] and keys[pygame.K_s]:
-            result = self.save_map()
-            if result:
-                self.prompt_message("Map saved successfully")
-            else:
-                self.prompt_message("Error saving map", "ERROR")
+            self.save_map_to_file()
         if keys[pygame.K_LCTRL] and keys[pygame.K_o]:
-            tkinter.Tk().wm_withdraw()
-            filename = simpledialog.askstring("Enter file name", "Open map from: ")
-            map = astar.Map()
-            map.read_from_file(filename)
-            self.load_map(map)
+            self.load_map_from_file()
 
         mouse_buttons = pygame.mouse.get_pressed()
         if mouse_buttons[0]:
@@ -330,7 +351,10 @@ class Application:
             elif action == "UNLOCK":
                 self.input_lock = False
                 msg = "Searching finished in {} ms\n".format(astar.PathFinding.search_map.time_elapsed)
-                msg += "Path length is {}".format(len(self.search_thread.result[1]))
+                if message.param:
+                    msg += "Path length is {}".format(len(self.search_thread.result[1]))
+                else:
+                    msg += "Path not found"
                 self.prompt_message(msg, "INFO")
             elif action == "POP":
                 self.grid.pop_grid_value(message.x, message.y, message.param)
@@ -352,6 +376,17 @@ class Application:
             for col in range(self.grid.col_num):
                 self.grid.pop_grid_value(row, col, Grid.POP_ID)
                 self.grid.pop_grid_value(row, col, Grid.IN_QUEUE_ID)
+                self.grid.pop_grid_value(row, col, Grid.CORRECT_PATH_ID)
+    
+    def clear_walls(self):
+        for row in range(self.grid.row_num):
+            for col in range(self.grid.col_num):
+                self.grid.pop_grid_value(row, col, Grid.WALL_ID)
+    
+    def clear_all(self):
+        self.clear_path()
+        self.clear_start_end()
+        self.clear_walls()
 
     def render(self):
         self.window.screen.fill(Color.COLOR_DICT["BLACK"])
@@ -359,7 +394,7 @@ class Application:
             for col in range(self.grid.col_num):
                 grid_item_value = self.grid.grid[row][col].top()
                 color = Color.COLOR_DICT["WHITE"]
-                if grid_item_value == Grid.START_END_ID:
+                if grid_item_value == Grid.START_END_ID or grid_item_value == Grid.CORRECT_PATH_ID:
                     color = Color.COLOR_DICT["RED"]
                 elif grid_item_value == Grid.WALL_ID:
                     color = Color.COLOR_DICT["BLUE"]

@@ -1,10 +1,11 @@
 import sys
 import heapq
 import copy
-import gui 
+import gui
 import threading
 from math import sqrt
 from timeit import timeit
+
 
 class Position:
     def __init__(self, x=0, y=0):
@@ -14,6 +15,7 @@ class Position:
     def __eq__(self, other):
         return self.x == other.x and self.y == other.y
 
+
 class Map:
     def __init__(self):
         self.size = 0
@@ -22,49 +24,59 @@ class Map:
         self.end = Position()
 
     def read_from_file(self, file_name):
-        with open(file_name, "r") as file:
-            try:
-                # Read all data
-                data = file.read().strip().split()
-                self.size = int(data[0])
+        try:
+            with open(file_name, "r") as file:
+                try:
+                    # Read all data
+                    data = file.read().strip().split()
+                    self.size = int(data[0])
 
-                # Read start point position
-                self.start.x = int(data[1])
-                self.start.y = int(data[2])
+                    # Read start point position
+                    self.start.x = int(data[1])
+                    self.start.y = int(data[2])
 
-                # Read end point position
-                self.end.x = int(data[3])
-                self.end.y = int(data[4])
+                    # Read end point position
+                    self.end.x = int(data[3])
+                    self.end.y = int(data[4])
 
-                # Read map data
-                data = data[5:]
-                for x in range(0, self.size):
-                    for y in range(0, self.size):
-                        if y == 0:
-                            self.map.append([])
-                        block = int(data[x * self.size + y])
-                        if block < 0 or block > 1:
-                            raise Exception("Value in map must be either 0 or 1")
-                        self.map[x].append(block)
-            except IOError:
-                print("Something went wrong while reading from {}".format(file_name))
-            finally:
-                file.close()
-    
+                    # Read map data
+                    data = data[5:]
+                    for x in range(0, self.size):
+                        for y in range(0, self.size):
+                            if y == 0:
+                                self.map.append([])
+                            block = int(data[x * self.size + y])
+                            if block < 0 or block > 1:
+                                raise Exception(
+                                    "Value in map must be either 0 or 1")
+                            self.map[x].append(block)
+                except IOError:
+                    print("Something went wrong while reading from {}".format(file_name))
+                finally:
+                    file.close()
+            return True
+        except FileNotFoundError:
+            return False
+
     def save_to_file(self, file_name):
-        with open(file_name, "w") as file:
-            try:
-                data = "{}\n".format(self.size)
-                data += "{} {}\n{} {}\n".format(self.start.x, self.start.y, self.end.x, self.end.y)
-                for row in range(self.size):
-                    for col in range(self.size):
-                        data += "{} ".format(self.map[row][col])
-                    data += "\n"
-                file.write(data)
-            except IOError:
-                print("Something went wrong while writing to {}".format(file_name))
-            finally:
-                file.close()
+        try:
+            with open(file_name, "w") as file:
+                try:
+                    data = "{}\n".format(self.size)
+                    data += "{} {}\n{} {}\n".format(self.start.x,
+                                                    self.start.y, self.end.x, self.end.y)
+                    for row in range(self.size):
+                        for col in range(self.size):
+                            data += "{} ".format(self.map[row][col])
+                        data += "\n"
+                    file.write(data)
+                except IOError:
+                    print("Something went wrong while writing to {}".format(file_name))
+                finally:
+                    file.close()
+            return True
+        except:
+            return False
 
     def print_map(self):
         for x in range(0, self.size):
@@ -86,10 +98,12 @@ class Map:
     def is_wall(self, x, y):
         return self.map[x][y] == 1
 
+
 class SearchNode:
     def __init__(self, position=Position(), parent=None):
         self.position = position
         self.parent = parent
+
 
 class PriorityEntry:
     def __init__(self, priority, data):
@@ -98,6 +112,7 @@ class PriorityEntry:
 
     def __lt__(self, other):
         return self.priority < other.priority
+
 
 class PriorityQueue:
     def __init__(self):
@@ -112,10 +127,12 @@ class PriorityQueue:
     def empty(self):
         return len(self.queue) == 0
 
+
 class Heuristic:
     @staticmethod
     def euclidian_distance(p1, p2):
         return sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2)
+
 
 class PathFinding:
     @staticmethod
@@ -129,7 +146,7 @@ class PathFinding:
         return check_map
 
     @staticmethod
-    def parse_result(map, open_list, path_found):
+    def parse_result(map, open_list, path_found, message_queue=None):
         # Return result map with with the path from start to end
         result = -1
         correct_path = []
@@ -147,16 +164,32 @@ class PathFinding:
 
             node = open_list[-1]
             correct_path.append(node)
+            if message_queue != None:
+                message = gui.Message(action="PUSH", param=gui.Grid.CORRECT_PATH_ID)
+                message.x = node.position.x
+                message.y = node.position.y
+                message_queue.put_nowait(message)
             node = node.parent
             while node.parent != None:
                 correct_path.append(node)
+                if message_queue != None:
+                    message = gui.Message(action="PUSH", param=gui.Grid.CORRECT_PATH_ID)
+                    message.x = node.position.x
+                    message.y = node.position.y
+                    message_queue.put_nowait(message)
                 x = node.position.x
                 y = node.position.y
                 result[x][y] = "x"
                 node = node.parent
 
             correct_path.append(SearchNode(map.start))
+            if message_queue != None:
+                message = gui.Message(action="PUSH", param=gui.Grid.CORRECT_PATH_ID)
+                message.x = node.position.x
+                message.y = node.position.y
+                message_queue.put_nowait(message)
             correct_path.reverse()
+        message_queue.put_nowait(gui.Message(action="UNLOCK", param=path_found))
         return result, correct_path
 
     @staticmethod
@@ -223,7 +256,7 @@ class PathFinding:
                 child_pos = Position(tempx, tempy)
                 f_value = g_value + heuristic(child_pos, map.end) * epsilon
                 queue.push(SearchNode(child_pos, node), f_value)
-                
+
                 # Request drawing
                 if message_queue != None:
                     in_queue_message = gui.Message(action="PUSH", param=gui.Grid.IN_QUEUE_ID)
@@ -231,21 +264,20 @@ class PathFinding:
                     in_queue_message.y = tempy
                     message_queue.put_nowait(in_queue_message)
 
-        # Unlock user input
-        if message_queue != None:
-            message_queue.put_nowait(gui.Message(action="UNLOCK"))
         return map, open_list, path_found
+
 
 class TestPathFinding:
     def __init__(self, inp="", out="", time_input="", time_output=""):
         self.input = inp
         self.output = out
         self.time_input = time_input
-        self.time_output = time_output 
+        self.time_output = time_output
 
     @staticmethod
     def run_path_finding(map, heuristic, epsilon=1):
-        result, queue, path_found = PathFinding.search_map(map, heuristic, epsilon=epsilon)
+        result, queue, path_found = PathFinding.search_map(
+            map, heuristic, epsilon=epsilon)
         return PathFinding.parse_result(result, queue, path_found)
 
     @staticmethod
@@ -275,7 +307,8 @@ class TestPathFinding:
                 if len(path) > 0:
                     outdata += "{}\n".format(len(path))
                     for node in path:
-                        outdata += "({},{}) ".format(node.position.x, node.position.y)
+                        outdata += "({},{}) ".format(node.position.x,
+                                                     node.position.y)
 
                     for x in result:
                         if outdata != "":
@@ -309,12 +342,14 @@ class TestPathFinding:
         try:
             with open(self.time_output, "w") as out:
                 for time in time_list:
-                    epsilon = self.run_path_finding_time_limited(map, heuristic, time)
+                    epsilon = self.run_path_finding_time_limited(
+                        map, heuristic, time)
                     out.write("{}\n".format(epsilon))
         except IOError:
             print("Something went wrong while writing to {}".format(self.time_output))
         finally:
             out.close()
+
 
 class SearchThread(threading.Thread):
     def __init__(self, map=None, heuristic=Heuristic.euclidian_distance, epsilon=1.0, message_queue=None):
@@ -326,18 +361,19 @@ class SearchThread(threading.Thread):
         self.heuristic = heuristic
         self.epsilon = epsilon
         self.message_queue = message_queue
-    
+
     def run(self):
         self.started = True
         if self.map == None:
             self.finished = True
             return -1
         raw_res = PathFinding.search_map(self.map, self.heuristic, self.epsilon, self.message_queue)
+        self.result = PathFinding.parse_result(*raw_res, message_queue=self.message_queue)
         self.finished = True
-        self.result = PathFinding.parse_result(*raw_res)
-    
+
     def runnable(self):
         return self.map != None
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 3 and len(sys.argv) != 5:
