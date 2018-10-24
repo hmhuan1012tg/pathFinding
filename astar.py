@@ -189,7 +189,8 @@ class PathFinding:
                 message.y = node.position.y
                 message_queue.put_nowait(message)
             correct_path.reverse()
-        message_queue.put_nowait(gui.Message(action="UNLOCK", param=path_found))
+        if message_queue != None:
+            message_queue.put_nowait(gui.Message(action="UNLOCK", param=path_found))
         return result, correct_path
 
     @staticmethod
