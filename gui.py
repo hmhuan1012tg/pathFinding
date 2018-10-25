@@ -1,136 +1,13 @@
 import pygame
-import copy
-import os
 import queue
+import os
 import tkinter
-import astar
 from tkinter import messagebox
 from tkinter import simpledialog 
-from math import sqrt
-from timeit import timeit
-
-# Create grid 
-# Create empty list
-class Ultilities:
-    @staticmethod
-    def init_pygame():
-        os.environ["SDL_VIDEO_WINDOW_POS"] = "50,50"
-        pygame.init()
-
-    @staticmethod
-    def create_grid(row_num, col_num, default_value):
-        grid = []
-        for row in range(0, row_num):
-            a_row = []
-            for col in range(0, col_num):
-                item = GridItem()
-                item.push(default_value)
-                a_row.append(item)
-            grid.append(a_row)
-        return grid
-    
-    @staticmethod
-    def create_map(size, default_value):
-        matrix = []
-        for row in range(size):
-            a_row = []
-            for col in range(size):
-                a_row.append(default_value)
-            matrix.append(a_row)
-        map = astar.Map()
-        map.map = matrix
-        map.size = size
-        return map
-
-class Message:
-    def __init__(self, x=0, y=0, action=None, param=None):
-        self.x = x
-        self.y = y
-        self.action = action
-        self.param = param
-
-class GridItem:
-    def __init__(self):
-        self.stack = []
-    
-    def push(self, value):
-        self.stack.append(value)
-    
-    def top(self):
-        return self.stack[-1]
-
-    def pop(self, value):
-        self.stack = list(filter(lambda a: a != value, self.stack))
-    
-    def empty(self):
-        return len(self.stack) == 0
-
-class Grid:
-    NO_WALL_ID = 0
-    WALL_ID = 1
-    START_END_ID = 2
-    IN_QUEUE_ID = 3
-    POP_ID = 4
-    CORRECT_PATH_ID = 5
-
-    def __init__(self, size):
-        self.grid = Ultilities.create_grid(size, size, Grid.NO_WALL_ID) 
-        self.row_num = size 
-        self.col_num = size 
-        self.rect_size = [20, 20]
-        self.margin = 5
-        self.map = Ultilities.create_map(size, 0)
-
-    def load_map(self, map):
-        self.map = map
-        self.row_num = map.size
-        self.col_num = map.size 
-        self.grid = Ultilities.create_grid(self.row_num, self.col_num, Grid.NO_WALL_ID)
-        for row in range(self.row_num):
-            for col in range(self.col_num):
-                if map.map[row][col] == 1:
-                    self.grid[row][col].push(Grid.WALL_ID)
-        self.pop_grid_value(map.start.x, map.start.y, Grid.WALL_ID)
-        self.push_grid_value(map.start.x, map.start.y, Grid.START_END_ID)
-
-        self.pop_grid_value(map.end.x, map.end.y, Grid.WALL_ID)
-        self.push_grid_value(map.end.x, map.end.y, Grid.START_END_ID)
-
-        return map.start.x, map.start.y, map.end.x, map.end.y
-    
-    def save_map(self):
-        # Map size and grid size not matched
-        # Create new map
-        if self.map.size != self.row_num:
-            self.map = Ultilities.create_map(self.row_num, 0)
-        for row in range(self.row_num):
-            for col in range(self.col_num):
-                value = self.get_grid_value(row, col)
-                if value == Grid.NO_WALL_ID:
-                    self.map.map[row][col] = 0
-                elif value == Grid.WALL_ID:
-                    self.map.map[row][col] = 1
-    
-    def calculate_rect_size(self, screen_width, screen_height):
-        self.rect_size[0] = (screen_width - self.margin * (self.col_num + 1)) / self.col_num
-        self.rect_size[1] = (screen_height - self.margin * (self.row_num + 1)) / self.row_num
-
-    def push_grid_value(self, x, y, value):
-        self.grid[x][y].push(value)
-    
-    def pop_grid_value(self, x, y, value):
-        self.grid[x][y].pop(value)
-    
-    def get_grid_value(self, x, y):
-        return self.grid[x][y].top()
-
-    def get_grid_item(self, x, y):
-        return self.grid[x][y]
-
-    def is_valid_position(self, x, y):
-        if x < 0 or x >= self.row_num or y < 0 or y >= self.col_num:
-            return False
-        return True
+import astar
+import grid
+import search_thread
+import search_map
 
 class Color:
     COLOR_DICT = dict(
@@ -138,16 +15,60 @@ class Color:
         WHITE = (255, 255, 255),
         GREEN = (77, 175, 124),
         LIGHT_GREEN = (200, 247, 197),
-        RED = (244, 101, 40),
-        BLUE = (64, 150, 211)
+        RED = (189, 61, 58),
+        BLUE = (64, 150, 211),
+        GREY = (110, 110, 110),
+        YELLOW = (213, 174, 65),
+        LIGHT_YELLOW = (237, 219, 171)
     )
 
 class Window:
-    def __init__(self, width=800, height=600, title="Pygame Application"):
-        self.size = [width, height]
+    def __init__(self, width=1200, height=600, title="Path Finding Visualization"):
+        pygame.init()
+        self.text_size_width_area=400
+        self.size = [width - self.text_size_width_area, height]
         self.title = title
-        self.screen = pygame.display.set_mode(self.size)
+        self.screen = pygame.display.set_mode([width, height])
         pygame.display.set_caption(title)
+        self.screen.fill(Color.COLOR_DICT["BLACK"])
+
+    def instructions(self):
+        print("Instruction")
+        pos_x = self.size[0] + 20
+        pos_y = 30
+        gap_between_text=20
+
+        myFont = pygame.font.SysFont("Times New Roman", 18)
+        instruction = "Enter: Start Searching"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y))
+        instruction = "ESC: exit"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text))
+        instruction = "Right click on ground and drag to build walls"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*2))
+        instruction= "Right click on wall and drag to detroy walls"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*3))
+        instruction = "Left click on start and goal to remove them"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*4))
+        instruction = "Left click on ground to choose start and goal"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*5))
+        instruction = "CTRL + L: clear path"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*6))
+        instruction = "CTRL + R: remove map"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*7))
+        instruction = "CTRL + O: load map"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*8))
+        instruction = "CTRL + S: save map"
+        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*9))
 
     def display(self):
         pygame.display.flip()
@@ -160,31 +81,29 @@ class Application:
         self.current_time = 0
         self.input_lock = False
         self.message_queue = queue.Queue()
-        self.search_thread = astar.SearchThread(message_queue=self.message_queue)
+        self.search_thread = search_thread.AStarThread(message_queue=self.message_queue)
         # Set key repeat interval
-        pygame.key.set_repeat(100, 100)
         self.add = True
 
-        self.start = dict( position = astar.Position(-1, -1), added = False )
-        self.end = dict( position = astar.Position(-1, -1), added = False )
+        self.start = dict( position = search_map.Position(-1, -1), added = False )
+        self.end = dict( position = search_map.Position(-1, -1), added = False )
 
-        self.grid = Grid(30)
-        self.grid.calculate_rect_size(self.window.size[0], self.window.size[1])
+        self.gui_grid = grid.Grid(50)
+        self.gui_grid.calculate_rect_size(self.window.size[0], self.window.size[1])
 
         self.prompt_instruction()
 
     def load_map(self, map):
-        startx, starty, endx, endy = self.grid.load_map(map)
-        self.search_thread.map = self.grid.map
-        self.grid.calculate_rect_size(self.window.size[0], self.window.size[1])
+        startx, starty, endx, endy, self.search_thread.map = self.gui_grid.load_map(map)
+        self.gui_grid.calculate_rect_size(self.window.size[0], self.window.size[1])
 
-        self.start = dict( position = astar.Position(startx, starty), added = True )
-        self.end = dict( position = astar.Position(endx, endy), added = True )
+        self.start = dict( position = search_map.Position(startx, starty), added = True )
+        self.end = dict( position = search_map.Position(endx, endy), added = True )
 
     def load_map_from_file(self):
         tkinter.Tk().wm_withdraw()
         filename = simpledialog.askstring("Enter file name", "Open map from: ")
-        map = astar.Map()
+        map = search_map.Map()
         if map.read_from_file(filename):
             self.prompt_message("Map loaded successfully", "INFO")
             self.load_map(map)
@@ -193,25 +112,25 @@ class Application:
     
     def save_map(self):
         if not self.start["added"] or not self.end["added"]:
-            return False
-        self.grid.save_map()
+            return None
+        saved = self.gui_grid.save_map()
         start = self.start["position"]
         end = self.end["position"]
-        self.grid.map.set_start_position(start.x, start.y)
-        self.grid.map.set_end_position(end.x, end.y)
-        self.search_thread.map = self.grid.map
-        return True
+        saved.set_start_position(start.x, start.y)
+        saved.set_end_position(end.x, end.y)
+        self.search_thread.map = saved 
+        return saved
     
     def save_map_to_file(self):
         result = self.save_map()
-        if result:
+        if result != None:
             self.prompt_message("Map saved successfully")
             tkinter.Tk().wm_withdraw()
             ok = messagebox.askyesno("Save to File", "Do you want to save to file ?")
             if ok:
                 tkinter.Tk().wm_withdraw()
                 filename = simpledialog.askstring("Enter file name", "Save map to:")
-                if self.grid.map.save_to_file(filename):
+                if result.save_to_file(filename):
                     self.prompt_message("Successfully saved to file", "INFO")
                 else:
                     self.prompt_message("Error saving to file\nSomething went wrong", "ERROR")
@@ -219,7 +138,7 @@ class Application:
             self.prompt_message("Error saving map", "ERROR")
     
     def prepare_thread(self):
-        self.search_thread = astar.SearchThread(message_queue=self.message_queue)
+        self.search_thread = search_thread.AStarThread(message_queue=self.message_queue)
     
     def prompt_exit(self):
         tkinter.Tk().wm_withdraw()
@@ -229,12 +148,25 @@ class Application:
     
     def prompt_instruction(self):
         tkinter.Tk().wm_withdraw()
-        instruction = "Press Enter to save map\n"
-        instruction += "Right click on ground and drag to build walls\n"
+        instruction = "Right click on ground and drag to build walls\n"
         instruction += "Right click on wall and drag to detroy walls\n"
         instruction += "Left click on start and goal to remove them\n"
         instruction += "Left click on ground to choose start and goal\n"
+        instruction += "For more infomation, use Ctrl + H to open Help Window\n"
         messagebox.showinfo("Instruction", instruction)
+
+    def prompt_help(self):
+        tkinter.Tk().wm_withdraw()
+        instruction = "Right click on ground and drag to build walls\n"
+        instruction += "Right click on wall and drag to detroy walls\n"
+        instruction += "Left click on start and goal to remove them\n"
+        instruction += "Left click on ground to choose start and goal\n"
+        instruction += "Enter to begin path finding\n"
+        instruction += "LCtrl + L to clear found path\n"
+        instruction += "LCtrl + R to clear full map\n"
+        instruction += "LCtrl + O to open map from file\n"
+        instruction += "LCtrl + S to save map\n"
+        messagebox.showinfo("Help", instruction)
     
     def prompt_message(self, message, mode="INFO"):
         tkinter.Tk().wm_withdraw()
@@ -261,7 +193,7 @@ class Application:
                         self.search_thread.start()
             elif event.type == pygame.MOUSEBUTTONDOWN and not self.input_lock:
                 row, column = self.get_item_at_mouse_position()
-                if self.grid.get_grid_value(row, column) == Grid.NO_WALL_ID:
+                if self.gui_grid.get_grid_value(row, column) == grid.Grid.NO_WALL_ID:
                     self.add = True
                 else:
                     self.add = False
@@ -270,24 +202,24 @@ class Application:
     
     def get_item_at_mouse_position(self):
         pos = pygame.mouse.get_pos()
-        column = int(pos[0] // (self.grid.rect_size[0] + self.grid.margin))
-        row = int(pos[1] // (self.grid.rect_size[1] + self.grid.margin))
+        column = int(pos[0] // (self.gui_grid.rect_size[0] + self.gui_grid.margin))
+        row = int(pos[1] // (self.gui_grid.rect_size[1] + self.gui_grid.margin))
         return row, column
                 
     def choose_start_end(self, x, y):
         if not self.start["added"]:
-            self.start["position"] = astar.Position(x, y)
+            self.start["position"] = search_map.Position(x, y)
             self.start["added"] = True
-            self.grid.push_grid_value(self.start["position"].x, self.start["position"].y, Grid.START_END_ID)
+            self.gui_grid.push_grid_value(self.start["position"].x, self.start["position"].y, grid.Grid.START_END_ID)
         elif not self.end["added"]:
-            self.end["position"] = astar.Position(x, y)
+            self.end["position"] = search_map.Position(x, y)
             self.end["added"] = True
-            self.grid.push_grid_value(self.end["position"].x, self.end["position"].y, Grid.START_END_ID)
+            self.gui_grid.push_grid_value(self.end["position"].x, self.end["position"].y, grid.Grid.START_END_ID)
         else:
             self.prompt_message("Start and Goal already chosen", "WARNING")
     
     def remove_start_end(self, x, y):
-        pos = astar.Position(x, y)
+        pos = search_map.Position(x, y)
         if self.start["position"] != pos and self.end["position"] != pos:
             return False
 
@@ -296,24 +228,28 @@ class Application:
             if self.start["position"] == pos:
                 self.end["position"], self.start["position"] = self.start["position"], self.end["position"]
             # Remove end
-            self.grid.pop_grid_value(self.end["position"].x, self.end["position"].y, Grid.START_END_ID)
-            self.end["position"] = astar.Position(-1, -1)
+            self.gui_grid.pop_grid_value(self.end["position"].x, self.end["position"].y, grid.Grid.START_END_ID)
+            self.end["position"] = search_map.Position(-1, -1)
             self.end["added"] = False
         elif self.start["added"]:
-            self.grid.pop_grid_value(self.start["position"].x, self.start["position"].y, Grid.START_END_ID)
-            self.start["position"] = astar.Position(-1, -1)
+            self.gui_grid.pop_grid_value(self.start["position"].x, self.start["position"].y, grid.Grid.START_END_ID)
+            self.start["position"] = search_map.Position(-1, -1)
             self.start["added"] = False
 
     def modify_wall(self, x, y):
-        if not self.grid.is_valid_position(x, y):
+        if not self.gui_grid.is_valid_position(x, y):
             return
+        position = search_map.Position(x, y)
+        if position == self.start["position"] or position == self.end["position"]:
+            return
+
         if self.add:
-            self.grid.push_grid_value(x, y, Grid.WALL_ID)
+            self.gui_grid.push_grid_value(x, y, grid.Grid.WALL_ID)
         else:
-            self.grid.pop_grid_value(x, y, Grid.WALL_ID)
+            self.gui_grid.pop_grid_value(x, y, grid.Grid.WALL_ID)
 
     def modify_start_end(self, x, y):
-        if not self.grid.is_valid_position(x, y):
+        if not self.gui_grid.is_valid_position(x, y):
             return
         if self.add:
             self.choose_start_end(x, y)
@@ -324,6 +260,8 @@ class Application:
         if self.input_lock:
             return
         keys = pygame.key.get_pressed()
+        if keys[pygame.K_LCTRL] and keys[pygame.K_h]:
+            self.prompt_help()
         if keys[pygame.K_LCTRL] and keys[pygame.K_l]:
             self.clear_path()
         if keys[pygame.K_LCTRL] and keys[pygame.K_r]:
@@ -340,7 +278,7 @@ class Application:
     def handle_message(self):
         time_got = pygame.time.get_ticks()
         elapsed_time = time_got - self.current_time
-        if elapsed_time < 100:
+        if elapsed_time < 20:
             return
         self.current_time = time_got
         if not self.message_queue.empty():
@@ -350,38 +288,38 @@ class Application:
                 self.input_lock = True
             elif action == "UNLOCK":
                 self.input_lock = False
-                msg = "Searching finished in {} ms\n".format(astar.PathFinding.search_map.time_elapsed)
+                msg = "Searching finished in {} ms\n".format(astar.AStar.search_map.time_elapsed)
                 if message.param:
                     msg += "Path length is {}".format(len(self.search_thread.result[1]))
                 else:
                     msg += "Path not found"
                 self.prompt_message(msg, "INFO")
             elif action == "POP":
-                self.grid.pop_grid_value(message.x, message.y, message.param)
+                self.gui_grid.pop_grid_value(message.x, message.y, message.param)
             elif action == "PUSH":
-                self.grid.push_grid_value(message.x, message.y, message.param)
+                self.gui_grid.push_grid_value(message.x, message.y, message.param)
     
     def clear_start_end(self):
         if self.start["added"]:
-            self.grid.push_grid_value(self.start["position"].x, self.start["position"].y, Grid.NO_WALL_ID)
-            self.start["position"] = astar.Position(-1, -1)
+            self.gui_grid.push_grid_value(self.start["position"].x, self.start["position"].y, grid.Grid.NO_WALL_ID)
+            self.start["position"] = search_map.Position(-1, -1)
             self.start["added"] = False
         if self.end["added"]:
-            self.grid.push_grid_value(self.end["position"].x, self.end["position"].y, Grid.NO_WALL_ID)
-            self.end["position"] = astar.Position(-1, -1)
+            self.gui_grid.push_grid_value(self.end["position"].x, self.end["position"].y, grid.Grid.NO_WALL_ID)
+            self.end["position"] = search_map.Position(-1, -1)
             self.end["added"] = False
 
     def clear_path(self):
-        for row in range(self.grid.row_num):
-            for col in range(self.grid.col_num):
-                self.grid.pop_grid_value(row, col, Grid.POP_ID)
-                self.grid.pop_grid_value(row, col, Grid.IN_QUEUE_ID)
-                self.grid.pop_grid_value(row, col, Grid.CORRECT_PATH_ID)
+        for row in range(self.gui_grid.row_num):
+            for col in range(self.gui_grid.col_num):
+                self.gui_grid.pop_grid_value(row, col, grid.Grid.POP_ID)
+                self.gui_grid.pop_grid_value(row, col, grid.Grid.IN_QUEUE_ID)
+                self.gui_grid.pop_grid_value(row, col, grid.Grid.CORRECT_PATH_ID)
     
     def clear_walls(self):
-        for row in range(self.grid.row_num):
-            for col in range(self.grid.col_num):
-                self.grid.pop_grid_value(row, col, Grid.WALL_ID)
+        for row in range(self.gui_grid.row_num):
+            for col in range(self.gui_grid.col_num):
+                self.gui_grid.pop_grid_value(row, col, grid.Grid.WALL_ID)
     
     def clear_all(self):
         self.clear_path()
@@ -390,24 +328,25 @@ class Application:
 
     def render(self):
         self.window.screen.fill(Color.COLOR_DICT["BLACK"])
-        for row in range(self.grid.row_num):
-            for col in range(self.grid.col_num):
-                grid_item_value = self.grid.grid[row][col].top()
+        self.window.instructions()
+        for row in range(self.gui_grid.row_num):
+            for col in range(self.gui_grid.col_num):
+                grid_item_value = self.gui_grid.grid_items[row][col].top()
                 color = Color.COLOR_DICT["WHITE"]
-                if grid_item_value == Grid.START_END_ID or grid_item_value == Grid.CORRECT_PATH_ID:
+                if grid_item_value == grid.Grid.START_END_ID or grid_item_value == grid.Grid.CORRECT_PATH_ID:
                     color = Color.COLOR_DICT["RED"]
-                elif grid_item_value == Grid.WALL_ID:
-                    color = Color.COLOR_DICT["BLUE"]
-                elif grid_item_value == Grid.POP_ID:
-                    color = Color.COLOR_DICT["GREEN"]
-                elif grid_item_value == Grid.IN_QUEUE_ID:
-                    color = Color.COLOR_DICT["LIGHT_GREEN"]
+                elif grid_item_value == grid.Grid.WALL_ID:
+                    color = Color.COLOR_DICT["GREY"]
+                elif grid_item_value == grid.Grid.POP_ID:
+                    color = Color.COLOR_DICT["YELLOW"]
+                elif grid_item_value == grid.Grid.IN_QUEUE_ID:
+                    color = Color.COLOR_DICT["LIGHT_YELLOW"]
 
                 pygame.draw.rect(self.window.screen, color, [
-                    (self.grid.rect_size[0] + self.grid.margin) * col + self.grid.margin,
-                    (self.grid.rect_size[1] + self.grid.margin) * row + self.grid.margin,
-                    self.grid.rect_size[0],
-                    self.grid.rect_size[1]
+                    (self.gui_grid.rect_size[0] + self.gui_grid.margin) * col + self.gui_grid.margin,
+                    (self.gui_grid.rect_size[1] + self.gui_grid.margin) * row + self.gui_grid.margin,
+                    self.gui_grid.rect_size[0],
+                    self.gui_grid.rect_size[1]
                 ])
         self.window.display()
 
@@ -423,9 +362,8 @@ class Application:
             self.search_thread.join()
 
 if __name__ == "__main__":
-    Ultilities.init_pygame()
     app = Application()
-    map = astar.Map()
+    map = search_map.Map()
     map.read_from_file("input.txt")
 
     app.run()
