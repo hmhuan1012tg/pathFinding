@@ -5,6 +5,7 @@ import tkinter
 from tkinter import messagebox
 from tkinter import simpledialog 
 import astar
+import heuristic
 import grid
 import search_thread
 import search_map
@@ -15,9 +16,10 @@ class Color:
         WHITE = (255, 255, 255),
         GREEN = (77, 175, 124),
         LIGHT_GREEN = (200, 247, 197),
-        RED = (189, 61, 58),
+        RED = (200, 80, 70),
         BLUE = (64, 150, 211),
         GREY = (110, 110, 110),
+        LIGHT_GREY = (180, 180, 180),
         YELLOW = (213, 174, 65),
         LIGHT_YELLOW = (237, 219, 171)
     )
@@ -30,44 +32,44 @@ class Window:
         self.title = title
         self.screen = pygame.display.set_mode([width, height])
         pygame.display.set_caption(title)
-        self.screen.fill(Color.COLOR_DICT["BLACK"])
+        self.screen.fill(Color.COLOR_DICT["LIGHT_GREY"])
 
     def instructions(self):
-        print("Instruction")
         pos_x = self.size[0] + 20
         pos_y = 30
         gap_between_text=20
 
         myFont = pygame.font.SysFont("Times New Roman", 18)
+        textColor = Color.COLOR_DICT["BLACK"]
         instruction = "Enter: Start Searching"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y))
         instruction = "ESC: exit"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text))
         instruction = "Right click on ground and drag to build walls"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*2))
         instruction= "Right click on wall and drag to detroy walls"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*3))
         instruction = "Left click on start and goal to remove them"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*4))
         instruction = "Left click on ground to choose start and goal"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*5))
         instruction = "CTRL + L: clear path"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*6))
         instruction = "CTRL + R: remove map"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*7))
         instruction = "CTRL + O: load map"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*8))
         instruction = "CTRL + S: save map"
-        displayText=myFont.render(instruction,True,Color.COLOR_DICT["WHITE"])
+        displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*9))
 
     def display(self):
@@ -80,18 +82,31 @@ class Application:
         self.clock = pygame.time.Clock()
         self.current_time = 0
         self.input_lock = False
+        self.heuristic = heuristic.Heuristic.euclidian_distance
+        self.epsilon = 1.0
         self.message_queue = queue.Queue()
-        self.search_thread = search_thread.AStarThread(message_queue=self.message_queue)
-        # Set key repeat interval
+        self.time_limited = True
+        self.limit = -1
+
+        # Create thread for searching
+        if self.prompt_algorithm():
+            while self.limit == -1:
+                self.limit = self.prompt_time_limit()
+            self.search_thread = search_thread.ARAThread(limit=self.limit, message_queue=self.message_queue)
+        else:
+            self.search_thread = search_thread.AStarThread(message_queue=self.message_queue)
+            self.time_limited = False
+
+        # Check whether to add or remove walls
         self.add = True
 
+        # Start point and End point
         self.start = dict( position = search_map.Position(-1, -1), added = False )
         self.end = dict( position = search_map.Position(-1, -1), added = False )
 
+        # Create grid for drawing
         self.gui_grid = grid.Grid(50)
         self.gui_grid.calculate_rect_size(self.window.size[0], self.window.size[1])
-
-        self.prompt_instruction()
 
     def load_map(self, map):
         startx, starty, endx, endy, self.search_thread.map = self.gui_grid.load_map(map)
@@ -103,6 +118,8 @@ class Application:
     def load_map_from_file(self):
         tkinter.Tk().wm_withdraw()
         filename = simpledialog.askstring("Enter file name", "Open map from: ")
+        if filename == None:
+            return
         map = search_map.Map()
         if map.read_from_file(filename):
             self.prompt_message("Map loaded successfully", "INFO")
@@ -130,6 +147,8 @@ class Application:
             if ok:
                 tkinter.Tk().wm_withdraw()
                 filename = simpledialog.askstring("Enter file name", "Save map to:")
+                if filename == None:
+                    return
                 if result.save_to_file(filename):
                     self.prompt_message("Successfully saved to file", "INFO")
                 else:
@@ -138,35 +157,70 @@ class Application:
             self.prompt_message("Error saving map", "ERROR")
     
     def prepare_thread(self):
-        self.search_thread = search_thread.AStarThread(message_queue=self.message_queue)
+        if self.time_limited:
+            self.search_thread = search_thread.ARAThread(limit=self.limit, epsilon=self.epsilon, message_queue=self.message_queue, heuristic=self.heuristic)
+        else:
+            self.search_thread = search_thread.AStarThread(message_queue=self.message_queue, heuristic=self.heuristic, epsilon=self.epsilon)
     
     def prompt_exit(self):
         tkinter.Tk().wm_withdraw()
         answer = messagebox.askyesno("Exit", "Do you want to exit")
         if answer:
             self.is_done = True
-    
-    def prompt_instruction(self):
-        tkinter.Tk().wm_withdraw()
-        instruction = "Right click on ground and drag to build walls\n"
-        instruction += "Right click on wall and drag to detroy walls\n"
-        instruction += "Left click on start and goal to remove them\n"
-        instruction += "Left click on ground to choose start and goal\n"
-        instruction += "For more infomation, use Ctrl + H to open Help Window\n"
-        messagebox.showinfo("Instruction", instruction)
 
-    def prompt_help(self):
+    def prompt_algorithm(self):
         tkinter.Tk().wm_withdraw()
-        instruction = "Right click on ground and drag to build walls\n"
-        instruction += "Right click on wall and drag to detroy walls\n"
-        instruction += "Left click on start and goal to remove them\n"
-        instruction += "Left click on ground to choose start and goal\n"
-        instruction += "Enter to begin path finding\n"
-        instruction += "LCtrl + L to clear found path\n"
-        instruction += "LCtrl + R to clear full map\n"
-        instruction += "LCtrl + O to open map from file\n"
-        instruction += "LCtrl + S to save map\n"
-        messagebox.showinfo("Help", instruction)
+        answer = messagebox.askyesno("A* or ARA*", "Run with time limited ?")
+        return answer
+
+    def prompt_heuristic(self):
+        tkinter.Tk().wm_withdraw()
+        msg = "EUCLIDIAN - Euclidian distance\n"
+        msg += "MAX DX DY - Maximum of dx and dy\n"
+        msg += "MIN DX DY - Minimum of dx and dy\n"
+        msg += "Your choice:"
+        chosen_heuristic = simpledialog.askstring("Heuristic", msg).upper()
+        thread_heuristic = None
+        if chosen_heuristic == "EUCLIDIAN":
+            thread_heuristic = heuristic.Heuristic.euclidian_distance
+        elif chosen_heuristic == "MAX DX DY":
+            thread_heuristic = heuristic.Heuristic.max_dx_dy
+        elif chosen_heuristic == "MIN DX DY":
+            thread_heuristic = heuristic.Heuristic.min_dx_dy
+        else:
+            self.prompt_message("Unknown heuristic function, use Euclidian distance as default", "ERROR")
+            thread_heuristic = heuristic.Heuristic.euclidian_distance
+        
+        self.heuristic = thread_heuristic
+        self.search_thread.heuristic = thread_heuristic
+
+    def prompt_epsilon(self):
+        tkinter.Tk().wm_withdraw()
+        epsilon_str = simpledialog.askstring("Epsilon", "Set epsilon to:")
+        try:
+            epsilon = float(epsilon_str)
+            if epsilon >= 1.0:
+                self.search_thread.epsilon = epsilon
+            else:
+                raise ValueError
+            self.epsilon = epsilon
+        except:
+            self.prompt_message("Epsilon must be number and at least 1.0, use 1.0 as default", "ERROR")
+            self.epsilon = 1.0
+        finally:
+            self.search_thread.epsilon = epsilon
+        
+    def prompt_time_limit(self):
+        tkinter.Tk().wm_withdraw()
+        limit = simpledialog.askstring("Time limit", "Limit time to (ms):")
+        try:
+            limit_as_number = float(limit)
+            if limit_as_number <= 0:
+                raise ValueError
+            return limit_as_number
+        except:
+            self.prompt_message("Please enter a positive number", "ERROR")  
+            return -1
     
     def prompt_message(self, message, mode="INFO"):
         tkinter.Tk().wm_withdraw()
@@ -193,6 +247,8 @@ class Application:
                         self.search_thread.start()
             elif event.type == pygame.MOUSEBUTTONDOWN and not self.input_lock:
                 row, column = self.get_item_at_mouse_position()
+                if not self.gui_grid.is_valid_position(row, column):
+                    return
                 if self.gui_grid.get_grid_value(row, column) == grid.Grid.NO_WALL_ID:
                     self.add = True
                 else:
@@ -261,7 +317,9 @@ class Application:
             return
         keys = pygame.key.get_pressed()
         if keys[pygame.K_LCTRL] and keys[pygame.K_h]:
-            self.prompt_help()
+            self.prompt_heuristic()
+        if keys[pygame.K_LCTRL] and keys[pygame.K_e]:
+            self.prompt_epsilon()
         if keys[pygame.K_LCTRL] and keys[pygame.K_l]:
             self.clear_path()
         if keys[pygame.K_LCTRL] and keys[pygame.K_r]:
@@ -278,7 +336,9 @@ class Application:
     def handle_message(self):
         time_got = pygame.time.get_ticks()
         elapsed_time = time_got - self.current_time
-        if elapsed_time < 20:
+        if self.time_limited and elapsed_time < 5:
+            return
+        if not self.time_limited and elapsed_time < 20:
             return
         self.current_time = time_got
         if not self.message_queue.empty():
@@ -288,17 +348,36 @@ class Application:
                 self.input_lock = True
             elif action == "UNLOCK":
                 self.input_lock = False
+                if self.time_limited:
+                    return
                 msg = "Searching finished in {} ms\n".format(astar.AStar.search_map.time_elapsed)
                 if message.param:
                     msg += "Path length is {}".format(len(self.search_thread.result[1]))
                 else:
                     msg += "Path not found"
                 self.prompt_message(msg, "INFO")
+            elif action == "ARA_UNLOCK":
+                if self.time_limited:
+                    msg = "Searching finished in {} ms\n".format(self.search_thread.result[0])
+                    if self.search_thread.result[2]:
+                        msg += "Limit satistifed\n"
+                    else:
+                        msg += "Limit not satisfied\n"
+                    msg += "Epsilon: {}".format(self.search_thread.result[1])
+                    self.prompt_message(msg, "INFO")
             elif action == "POP":
                 self.gui_grid.pop_grid_value(message.x, message.y, message.param)
             elif action == "PUSH":
                 self.gui_grid.push_grid_value(message.x, message.y, message.param)
-    
+            elif action == "CLEAR":
+                self.clear_path()
+            elif action == "ARA_INFO":
+                if self.time_limited:
+                    msg = "Searching finished in {} ms\n".format(message.param[2])
+                    msg += "Path length: {}\n".format(message.param[1])
+                    msg += "Epsilon: {}".format(message.param[0])
+                    self.prompt_message(msg, "INFO")
+
     def clear_start_end(self):
         if self.start["added"]:
             self.gui_grid.push_grid_value(self.start["position"].x, self.start["position"].y, grid.Grid.NO_WALL_ID)
@@ -327,7 +406,7 @@ class Application:
         self.clear_walls()
 
     def render(self):
-        self.window.screen.fill(Color.COLOR_DICT["BLACK"])
+        self.window.screen.fill(Color.COLOR_DICT["LIGHT_GREY"])
         self.window.instructions()
         for row in range(self.gui_grid.row_num):
             for col in range(self.gui_grid.col_num):
@@ -340,7 +419,7 @@ class Application:
                 elif grid_item_value == grid.Grid.POP_ID:
                     color = Color.COLOR_DICT["YELLOW"]
                 elif grid_item_value == grid.Grid.IN_QUEUE_ID:
-                    color = Color.COLOR_DICT["LIGHT_YELLOW"]
+                    color = Color.COLOR_DICT["LIGHT_GREEN"]
 
                 pygame.draw.rect(self.window.screen, color, [
                     (self.gui_grid.rect_size[0] + self.gui_grid.margin) * col + self.gui_grid.margin,

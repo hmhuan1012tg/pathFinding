@@ -38,16 +38,6 @@ class PriorityQueue:
 
 class AStar:
     @staticmethod
-    def create_map(size, default_value):
-        check_map = []
-        for x in range(0, size):
-            for y in range(0, size):
-                if y == 0:
-                    check_map.append([])
-                check_map[x].append(default_value)
-        return check_map
-
-    @staticmethod
     def parse_result(map, open_list, path_found, message_queue=None):
         # Return result map with with the path from start to end
         result = -1
@@ -97,10 +87,10 @@ class AStar:
         return result, correct_path
 
     @staticmethod
-    @utilities.timeit
+    @utilities.timer
     def search_map(map, heuristic, epsilon=1, message_queue=None):
         # Create a map for checking if a block is in queue
-        check_map = AStar.create_map(map.size, -1)
+        check_map = utilities.Utilities.create_matrix(map.size, -1)
         check_map[map.start.x][map.start.y] = 0
 
         # Run algorithm
@@ -110,6 +100,9 @@ class AStar:
         # Lock user input
         if message_queue != None:
             message_queue.put_nowait(message.Message(action="LOCK"))
+        # Clear path
+        if message_queue != None:
+            message_queue.put_nowait(message.Message(action="CLEAR"))
         node = SearchNode(map.start, None)
         queue.push(node, heuristic(map.start, map.end))
         while not queue.empty():
@@ -170,7 +163,6 @@ class AStar:
 
         return map, open_list, path_found
 
-
 class TestPathFinding:
     def __init__(self, inp="", out="", time_input="", time_output=""):
         self.input = inp
@@ -184,7 +176,7 @@ class TestPathFinding:
             map, heuristic, epsilon=epsilon)
         return AStar.parse_result(result, queue, path_found)
 
-    def run_time_free(self, heuristic):
+    def run(self, heuristic):
         map = search_map.Map()
         map.read_from_file(self.input)
 
@@ -212,11 +204,18 @@ class TestPathFinding:
             out.close()
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3 and len(sys.argv) != 5:
-        raise Exception("""This program needs at least 2 arguments for input path and output path
-                            Paths for time limit input and output are optional""")
+    if len(sys.argv) < 3 or len(sys.argv) > 4:
+        raise Exception("""This program needs at least 2 arguments for input path and output path""")
+
     input_path = sys.argv[1]
     output_path = sys.argv[2]
 
+    h = heuristic.Heuristic.euclidian_distance
+    if len(sys.argv) == 4:
+        if sys.argv[3] == "max":
+            h = heuristic.Heuristic.max_dx_dy
+        elif sys.argv[3] == "min":
+            h = heuristic.Heuristic.min_dx_dy
+
     test = TestPathFinding(input_path, output_path)
-    test.run_time_free(heuristic.Heuristic.euclidian_distance)
+    test.run(h)

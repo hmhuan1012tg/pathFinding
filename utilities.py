@@ -40,15 +40,15 @@ class Utilities:
             matrix.append(a_row)
         return matrix
 
-def timeit(func):
+def timer(func):
     @functools.wraps(func)
     def timed(*args, **kwargs):
-        timestart = time.time()
+        time_start = time.perf_counter()
         result = func(*args, **kwargs)
-        timeend = time.time()
+        time_end = time.perf_counter()
 
-        timed.time_elapsed = float((timeend - timestart) * 1000)
-        print("{} runs in  {:.2f} milliseconds".format(func.__name__, (timeend - timestart) * 1000))
+        timed.time_elapsed = float(time_end - time_start) * 1000
+        print("{} runs in  {:.2f} milliseconds".format(func.__name__, timed.time_elapsed))
         
         return result
     return timed
