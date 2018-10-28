@@ -99,7 +99,7 @@ class Application:
             while self.limit == -1:
                 self.limit = self.prompt_time_limit()
             self.search_thread = search_thread.ARAThread(limit=self.limit, message_queue=self.message_queue)
-            self.epsilon = 5.0
+            self.epsilon = 3.0
         else:
             self.search_thread = search_thread.AStarThread(message_queue=self.message_queue)
             self.time_limited = False
@@ -351,9 +351,9 @@ class Application:
     def handle_message(self):
         time_got = pygame.time.get_ticks()
         elapsed_time = time_got - self.current_time
-        if self.time_limited and elapsed_time < 5:
+        if self.time_limited and elapsed_time < 1:
             return
-        if not self.time_limited and elapsed_time < 20:
+        if not self.time_limited and elapsed_time < 10:
             return
         self.current_time = time_got
         if not self.message_queue.empty():
@@ -454,7 +454,6 @@ class Application:
             self.handle_input()
             self.handle_message()
             self.render()
-            self.clock.tick(60)
         pygame.quit()
         if self.search_thread.started:
             self.search_thread.join()
