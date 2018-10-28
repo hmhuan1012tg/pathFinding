@@ -71,6 +71,12 @@ class Window:
         instruction = "CTRL + S: save map"
         displayText=myFont.render(instruction,True,textColor)
         self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*9))
+        instruction = "CTRL + E: change epsilon"
+        displayText=myFont.render(instruction,True,textColor)
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*10))
+        instruction = "CTRL + H: change heuristic"
+        displayText=myFont.render(instruction,True,textColor)
+        self.screen.blit(displayText, (pos_x, pos_y+gap_between_text*11))
 
     def display(self):
         pygame.display.flip()
@@ -93,9 +99,13 @@ class Application:
             while self.limit == -1:
                 self.limit = self.prompt_time_limit()
             self.search_thread = search_thread.ARAThread(limit=self.limit, message_queue=self.message_queue)
+            self.epsilon = 5.0
         else:
             self.search_thread = search_thread.AStarThread(message_queue=self.message_queue)
             self.time_limited = False
+        
+        self.search_thread.heuristic = self.heuristic
+        self.search_thread.epsilon = self.epsilon
 
         # Check whether to add or remove walls
         self.add = True
@@ -179,7 +189,10 @@ class Application:
         msg += "MAX DX DY - Maximum of dx and dy\n"
         msg += "MIN DX DY - Minimum of dx and dy\n"
         msg += "Your choice:"
-        chosen_heuristic = simpledialog.askstring("Heuristic", msg).upper()
+        chosen_heuristic = simpledialog.askstring("Heuristic", msg)
+        if chosen_heuristic == None:
+            return
+        chosen_heuristic = chosen_heuristic.upper()
         thread_heuristic = None
         if chosen_heuristic == "EUCLIDIAN":
             thread_heuristic = heuristic.Heuristic.euclidian_distance
@@ -197,6 +210,8 @@ class Application:
     def prompt_epsilon(self):
         tkinter.Tk().wm_withdraw()
         epsilon_str = simpledialog.askstring("Epsilon", "Set epsilon to:")
+        if epsilon_str == None:
+            return
         try:
             epsilon = float(epsilon_str)
             if epsilon >= 1.0:
@@ -352,9 +367,10 @@ class Application:
                     return
                 msg = "Searching finished in {} ms\n".format(astar.AStar.search_map.time_elapsed)
                 if message.param:
-                    msg += "Path length is {}".format(len(self.search_thread.result[1]))
+                    msg += "Path length is {}\n".format(len(self.search_thread.result[1]))
                 else:
-                    msg += "Path not found"
+                    msg += "Path not found\n"
+                msg += "Epsilon: {}".format(self.epsilon)
                 self.prompt_message(msg, "INFO")
             elif action == "ARA_UNLOCK":
                 if self.time_limited:
@@ -363,7 +379,7 @@ class Application:
                         msg += "Limit satistifed\n"
                     else:
                         msg += "Limit not satisfied\n"
-                    msg += "Epsilon: {}".format(self.search_thread.result[1])
+                    msg += "Best Epsilon: {}".format(self.search_thread.result[1])
                     self.prompt_message(msg, "INFO")
             elif action == "POP":
                 self.gui_grid.pop_grid_value(message.x, message.y, message.param)
@@ -374,7 +390,10 @@ class Application:
             elif action == "ARA_INFO":
                 if self.time_limited:
                     msg = "Searching finished in {} ms\n".format(message.param[2])
-                    msg += "Path length: {}\n".format(message.param[1])
+                    if message.param[1] > 0:
+                        msg += "Path length: {}\n".format(message.param[1])
+                    else:
+                        msg += "Path not found\n"
                     msg += "Epsilon: {}".format(message.param[0])
                     self.prompt_message(msg, "INFO")
 
